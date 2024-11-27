@@ -11,11 +11,11 @@ library(tidyverse)
 
 ## Problem 2
 
-### Import data and create variable "city_state"
-### Create binary variable "solved" indicating whether the homicide is solved
-### Omit 4 city state
-### limit race only to black and white
-### Clean Unknown victim_age and convert to numeric
+#### Import data and create variable "city_state"
+#### Create binary variable "solved" indicating whether the homicide is solved
+#### Omit 4 city state
+#### limit race only to black and white
+#### Clean Unknown victim_age and convert to numeric
 ```{r}
 homicide_df = 
   read_csv("./data/homicide-data.csv") |> 
