@@ -1,0 +1,111 @@
+---
+title: "Homework 6"
+author: "Hanchuan Chen"
+date: "2024-11-26"
+output: github_document
+---
+
+```{r message=FALSE}
+library(tidyverse)
+```
+
+## Problem 2
+
+### Import data and create variable "city_state"
+### Create binary variable "solved" indicating whether the homicide is solved
+### Omit 4 city state
+### limit race only to black and white
+### Clean Unknown victim_age and convert to numeric
+```{r}
+homicide_df = 
+  read_csv("./data/homicide-data.csv") |> 
+  janitor::clean_names() |> 
+  mutate(city_state = paste(city, state, sep=", ")) |> 
+  mutate(solved = if_else(disposition == "Closed by arrest", 1, 0)) |> 
+  filter(!(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"))) |> 
+  filter(victim_race %in% c("Black", "White")) |> 
+  filter(victim_age != "Unknown",
+         victim_sex != "Unknown") |> 
+  mutate(victim_age = as.numeric(victim_age))
+```
+
+#### Logisic regression for Baltimore, MD
+```{r}
+#filter the city Baltimore
+baltimore_df = 
+  homicide_df |> 
+  filter(city_state == "Baltimore, MD")
+
+#Perform Logistic regression
+fit_logistic = 
+  baltimore_df |> 
+  glm(solved ~ victim_age + victim_race + victim_sex, data = _, family = binomial())
+```
+
+#### Tidy logistic regression
+```{r}
+tidy_logistic = 
+  fit_logistic |> 
+  broom::tidy(conf.int = TRUE) |> 
+  mutate(OR = exp(estimate),
+         conf.low = exp(conf.low),
+         conf.high = exp(conf.high)) |>
+  select(term, log_OR = estimate, OR, p.value, conf.low, conf.high) |> 
+  knitr::kable(digits = 3)
+
+tidy_logistic
+```
+
+From the table, homicides in which the victim is male are significantly less like to be resolved than those in which the victim is female.
+
+#### Run glm for each cities
+```{r}
+city_result = 
+  homicide_df |> 
+  nest(data = -city_state) |> 
+  mutate(
+    model = map(data, \(df) glm(solved ~ victim_age + victim_sex + victim_race,
+                            family = binomial(), data = df)),
+    tidy_logistic = map(model, ~ broom::tidy(.x, conf.int = TRUE, exponentiate = TRUE))) |> 
+  unnest(tidy_logistic) |> 
+  filter(term == "victim_sexMale")
+
+city_result |> 
+  select(city_state, OR = estimate, conf.low, conf.high) |> 
+  knitr::kable(digits = 3)
+```
+
+#### Create a plot of ORs and CIs for each city
+```{r}
+or_plot <- city_result |> 
+  filter(term == "victim_sexMale") |>  
+  ggplot(aes(x = reorder(city_state, estimate), y = estimate)) + 
+  geom_point() +  
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +  
+  coord_flip() +  
+  labs(
+    x = "City",
+    y = "Adjusted Odds Ratio (Male vs Female)",
+    title = "Odds Ratios and Confidence Intervals by City",
+    caption = "Data: Homicide Analysis"
+  ) +
+  theme_minimal()
+
+print(or_plot)
+```
+
+The majority of cities show odds ratios below 1, indicating that homicides involving male victims are generally less likely to be solved compared to female victims. Also wide confidence intervals in some cities suggest uncertainty in the estimates, possibly due to small sample sizes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
