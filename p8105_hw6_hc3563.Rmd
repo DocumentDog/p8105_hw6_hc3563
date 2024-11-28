@@ -7,6 +7,7 @@ output: github_document
 
 ```{r message=FALSE}
 library(tidyverse)
+library(modelr)
 ```
 
 ## Problem 2
@@ -94,18 +95,111 @@ or_plot <- city_result |>
 print(or_plot)
 ```
 
-The majority of cities show odds ratios below 1, indicating that homicides involving male victims are generally less likely to be solved compared to female victims. Also wide confidence intervals in some cities suggest uncertainty in the estimates, possibly due to small sample sizes
+The majority of cities show odds ratios below 1, indicating that homicides involving male victims are generally less likely to be solved compared to female victims. Also wide confidence intervals in some cities suggest uncertainty in the estimates, possibly due to small sample sizes.
 
+## Problem 3
 
+#### Load and clean data
 
+In this dataset, there are 4 variables are categorical and need to be transformed to factor. Then I checked missing value and dropped them (there is no missing value).
+```{r}
+birthweight_df = 
+  read_csv("./data/birthweight.csv") |> 
+  janitor::clean_names() |> 
+  mutate(
+    babysex = as.factor(babysex),
+    frace = as.factor(frace),
+    malform = as.factor(malform),
+    mrace = as.factor(mrace)
+  ) |> 
+  drop_na()
+```
 
+#### Fit regression model
 
+By real life experience, Baby sex, Gestational weeks (gaweeks), weight gain during pregnancy (wtgain), pre-pregnancy BMI (ppbmi), race of parents, maternal height (mheight) and weight (delwt), and some smoking levels (smoken) might be influential, so I add them as predictors.
+```{r}
+# Fit the regression model
+model = lm(bwt ~ babysex + gaweeks + wtgain + ppbmi + frace + mrace + smoken + mheight + delwt, data = birthweight_df)
 
+model |> 
+  broom::tidy() |> 
+  knitr::kable(digits = 3)
+```
 
+#### Plot model residuals
+```{r}
+# Add predictions and residuals to the dataset
+birthweight_df =
+  birthweight_df |> 
+  modelr::add_predictions(model, var = "predicted_bwt") |> 
+  modelr::add_residuals(model, var = "residuals")
 
+# Plot residuals vs. fitted values
+ggplot(birthweight_df, aes(x = predicted_bwt, y = residuals)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs. Fitted Values",
+    x = "Fitted Values",
+    y = "Residuals"
+  )
+```
 
+#### Build another 2 models
+```{r}
+model_2 = lm(bwt ~ blength + gaweeks, data = birthweight_df)
+model_3 = lm(bwt ~ bhead * blength * babysex, data = birthweight_df)
+```
 
+#### Cross-validation and the avg RMSE results
+```{r}
+set.seed(42)
+cv_df = 
+  crossv_mc(birthweight_df, 100) |> 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
 
+cv_df = 
+  cv_df |> 
+  mutate(
+    model = map(train, \(df) lm(bwt ~ babysex + gaweeks + wtgain + ppbmi + frace + 
+                                  mrace + smoken + mheight + delwt, data = df)),
+    model_2 = map(train, \(df) lm(bwt ~ blength + gaweeks, data = df)),
+    model_3 = map(train, \(df) lm(bwt ~ bhead * blength * babysex, data = df))
+  ) |> 
+  mutate(
+    rmse_model = map2_dbl(model, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_model_2 = map2_dbl(model_2, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_model_3 = map2_dbl(model_3, test, \(mod, df) rmse(model = mod, data = df))
+  )
 
+cv_summary =
+  cv_df |> 
+  summarize(
+    avg_rmse_model = mean(rmse_model),
+    avg_rmse_model_2 = mean(rmse_model_2),
+    avg_rmse_model_3 = mean(rmse_model_3)
+  )
+
+cv_summary
+```
+
+#### Plot the error distribution 
+```{r}
+cv_df |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") |> 
+  mutate(model = fct_inorder(model)) |> 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
+
+By setting seed 42, model 3 with 3-interactions have the lowest RMSE and full model have the highest. However, when I change seed and the results also changed, which means sampling will make influence on final RMSE results. 
 
 
